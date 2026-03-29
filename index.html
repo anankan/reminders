@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reminders</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f7f7f5;
+      --card: #ffffff;
+      --border: #e5e5e3;
+      --text: #1a1a1a;
+      --muted: #8a8a8a;
+      --accent: #5b5bd6;
+      --accent-light: #ededfc;
+      --danger: #e5484d;
+      --success: #30a46c;
+      --warn: #f76b15;
+      --recurring: #8e4ec6;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── AUTH ── */
+    #auth-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .auth-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 32px;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+    }
+
+    .auth-card h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+    .auth-card p { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+
+    .auth-card input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 15px;
+      margin-bottom: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .auth-card input:focus { border-color: var(--accent); }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 11px 18px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s, background 0.15s;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; width: 100%; }
+    .btn-primary:hover:not(:disabled) { opacity: 0.9; }
+    .btn-ghost { background: transparent; color: var(--muted); font-size: 13px; padding: 6px 10px; }
+    .btn-ghost:hover { color: var(--text); }
+    .btn-sm { padding: 6px 12px; font-size: 13px; border-radius: 8px; }
+    .btn-danger { background: #fff0f0; color: var(--danger); }
+    .btn-complete { background: #f0faf4; color: var(--success); }
+
+    .msg { font-size: 13px; margin-top: 10px; min-height: 18px; }
+    .msg.error { color: var(--danger); }
+    .msg.success { color: var(--success); }
+
+    /* ── APP SHELL ── */
+    #app { display: none; max-width: 680px; margin: 0 auto; padding: 24px 16px 80px; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+    }
+    header h1 { font-size: 22px; font-weight: 700; }
+
+    /* ── ADD FORM ── */
+    .add-form {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 28px;
+    }
+    .add-form h2 { font-size: 11px; font-weight: 700; margin-bottom: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 140px; }
+    .form-group label { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .form-group input, .form-group select {
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      background: var(--bg);
+    }
+    .form-group input:focus, .form-group select:focus { border-color: var(--accent); background: #fff; }
+    .form-actions { margin-top: 12px; display: flex; justify-content: flex-end; }
+
+    /* ── SECTIONS ── */
+    .section { margin-bottom: 28px; }
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+      padding: 0 4px;
+    }
+    .section-label.overdue { color: var(--danger); }
+    .section-label.today { color: var(--accent); }
+
+    /* ── REMINDER CARDS ── */
+    .reminder-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      transition: box-shadow 0.15s;
+    }
+    .reminder-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .reminder-card.overdue { border-left: 3px solid var(--danger); }
+
+    .card-body { flex: 1; min-width: 0; }
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .card-meta { font-size: 12px; color: var(--muted); }
+    .card-notes { font-size: 13px; color: #555; margin-top: 4px; word-break: break-word; }
+
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 20px;
+      letter-spacing: 0.3px;
+    }
+    .badge-recurring { background: #f3eeff; color: var(--recurring); }
+    .badge-overdue { background: #fff0f0; color: var(--danger); }
+
+    .card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+    /* ── EMPTY STATE ── */
+    .empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px; }
+
+    /* ── LOADING ── */
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin: 40px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #1a1a1a;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      z-index: 100;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 480px) {
+      .form-row { flex-direction: column; }
+      header h1 { font-size: 18px; }
+      .card-actions { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <h1>🔔 Reminders</h1>
+    <p id="auth-subtitle">Enter your email to receive a magic link</p>
+    <input type="email" id="email-input" placeholder="you@example.com" autocomplete="email" />
+    <button class="btn btn-primary" id="magic-link-btn" onclick="sendMagicLink()">Send magic link</button>
+    <p class="msg" id="auth-msg"></p>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <header>
+    <h1>🔔 Reminders</h1>
+    <button class="btn btn-ghost" onclick="signOut()">Sign out</button>
+  </header>
+
+  <!-- Add reminder form -->
+  <div class="add-form">
+    <h2>Add reminder</h2>
+    <div class="form-row">
+      <div class="form-group" style="flex:2; min-width:200px;">
+        <label>Title</label>
+        <input type="text" id="new-title" placeholder="What do you need to do?" />
+      </div>
+      <div class="form-group">
+        <label>Date &amp; Time</label>
+        <input type="datetime-local" id="new-due" />
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:10px;">
+      <div class="form-group">
+        <label>Repeat</label>
+        <select id="new-recurrence">
+          <option value="">One-time</option>
+          <option value="daily">Daily</option>
+          <option value="weekly:monday">Every Monday</option>
+          <option value="weekly:tuesday">Every Tuesday</option>
+          <option value="weekly:wednesday">Every Wednesday</option>
+          <option value="weekly:thursday">Every Thursday</option>
+          <option value="weekly:friday">Every Friday</option>
+          <option value="weekly:saturday">Every Saturday</option>
+          <option value="weekly:sunday">Every Sunday</option>
+          <option value="weekly:monday,tuesday,wednesday,thursday,friday">Every weekday</option>
+          <option value="monthly:1">Monthly (1st)</option>
+          <option value="monthly:15">Monthly (15th)</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex:2;">
+        <label>Notes (optional)</label>
+        <input type="text" id="new-notes" placeholder="URL, phone number, extra context…" />
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" style="width:auto; padding: 10px 24px;" onclick="addReminder()">Add reminder</button>
+    </div>
+  </div>
+
+  <!-- Reminder list -->
+  <div id="reminders-list"><div class="spinner"></div></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const SUPABASE_URL = 'https://erjhfsowriclorhsbzsn.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVyamhmc293cmljbG9yaHNienNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0NTUzMTIsImV4cCI6MjA4MjAzMTMxMn0.W_waALnKq7-QKU6VS15ohPq3vkZe_yGwSO_k6POyxlo';
+
+  const { createClient } = supabase;
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // ── UTILS ──────────────────────────────────────────────
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2800);
+  }
+
+  function formatDateTime(iso) {
+    const d = new Date(iso);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    const dDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (dDate.getTime() === today.getTime()) return `Today at ${time}`;
+    if (dDate.getTime() === tomorrow.getTime()) return `Tomorrow at ${time}`;
+    return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ` at ${time}`;
+  }
+
+  function isOverdue(iso) { return new Date(iso) < new Date(); }
+
+  function isToday(iso) {
+    const d = new Date(iso), now = new Date();
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  }
+
+  function isThisWeek(iso) {
+    const d = new Date(iso), now = new Date();
+    const weekEnd = new Date(now); weekEnd.setDate(now.getDate() + 7);
+    return d >= now && d <= weekEnd;
+  }
+
+  function recurrenceLabel(r) {
+    if (!r) return null;
+    const map = {
+      'daily': 'Daily',
+      'weekly:monday': 'Every Mon', 'weekly:tuesday': 'Every Tue',
+      'weekly:wednesday': 'Every Wed', 'weekly:thursday': 'Every Thu',
+      'weekly:friday': 'Every Fri', 'weekly:saturday': 'Every Sat',
+      'weekly:sunday': 'Every Sun',
+      'weekly:monday,tuesday,wednesday,thursday,friday': 'Weekdays',
+    };
+    if (map[r]) return map[r];
+    if (r.startsWith('monthly:')) return `Monthly (${r.split(':')[1]})`;
+    return r;
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── AUTH ───────────────────────────────────────────────
+
+  async function sendMagicLink() {
+    const email = document.getElementById('email-input').value.trim();
+    const msg = document.getElementById('auth-msg');
+    const btn = document.getElementById('magic-link-btn');
+    if (!email) { msg.textContent = 'Please enter your email.'; msg.className = 'msg error'; return; }
+
+    btn.disabled = true; btn.textContent = 'Sending…'; msg.textContent = '';
+
+    const redirectTo = window.location.href.split('?')[0].split('#')[0];
+    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
+
+    if (error) {
+      msg.textContent = error.message; msg.className = 'msg error';
+      btn.disabled = false; btn.textContent = 'Send magic link';
+    } else {
+      msg.textContent = '✓ Check your email for the magic link!';
+      msg.className = 'msg success';
+      document.getElementById('auth-subtitle').textContent = 'Magic link sent!';
+    }
+  }
+
+  async function signOut() {
+    await sb.auth.signOut();
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('auth-msg').textContent = '';
+    document.getElementById('email-input').value = '';
+  }
+
+  document.getElementById('email-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendMagicLink();
+  });
+
+  // ── REMINDERS ─────────────────────────────────────────
+
+  async function loadReminders() {
+    const list = document.getElementById('reminders-list');
+    list.innerHTML = '<div class="spinner"></div>';
+
+    const { data, error } = await sb
+      .from('reminders')
+      .select('*')
+      .eq('status', 'pending')
+      .order('due_at', { ascending: true });
+
+    if (error) { list.innerHTML = `<div class="empty">Error: ${error.message}</div>`; return; }
+    if (!data || data.length === 0) { list.innerHTML = '<div class="empty">No pending reminders 🎉</div>'; return; }
+
+    const groups = { overdue: [], today: [], week: [], later: [] };
+    for (const r of data) {
+      if (isOverdue(r.due_at))       groups.overdue.push(r);
+      else if (isToday(r.due_at))    groups.today.push(r);
+      else if (isThisWeek(r.due_at)) groups.week.push(r);
+      else                           groups.later.push(r);
+    }
+
+    let html = '';
+    if (groups.overdue.length) {
+      html += `<div class="section"><div class="section-label overdue">⚠ Overdue (${groups.overdue.length})</div>`;
+      html += groups.overdue.map(r => renderCard(r, true)).join('') + '</div>';
+    }
+    if (groups.today.length) {
+      html += `<div class="section"><div class="section-label today">Today</div>`;
+      html += groups.today.map(r => renderCard(r)).join('') + '</div>';
+    }
+    if (groups.week.length) {
+      html += `<div class="section"><div class="section-label">This week</div>`;
+      html += groups.week.map(r => renderCard(r)).join('') + '</div>';
+    }
+    if (groups.later.length) {
+      html += `<div class="section"><div class="section-label">Later</div>`;
+      html += groups.later.map(r => renderCard(r)).join('') + '</div>';
+    }
+
+    list.innerHTML = html;
+  }
+
+  function renderCard(r, overdue = false) {
+    const recLabel = recurrenceLabel(r.recurrence);
+    return `
+      <div class="reminder-card ${overdue ? 'overdue' : ''}" id="card-${r.id}">
+        <div class="card-body">
+          <div class="card-title">
+            ${escapeHtml(r.title)}
+            ${recLabel ? `<span class="badge badge-recurring">🔁 ${recLabel}</span>` : ''}
+            ${overdue ? `<span class="badge badge-overdue">Overdue</span>` : ''}
+          </div>
+          <div class="card-meta">${formatDateTime(r.due_at)}</div>
+          ${r.notes ? `<div class="card-notes">${escapeHtml(r.notes)}</div>` : ''}
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-complete" onclick="completeReminder(${r.id})">✓ Done</button>
+          <button class="btn btn-sm btn-danger" onclick="dismissReminder(${r.id})">✕</button>
+        </div>
+      </div>`;
+  }
+
+  async function completeReminder(id) {
+    document.getElementById(`card-${id}`).style.opacity = '0.4';
+    const { data } = await sb.from('reminders').select('*').eq('id', id).single();
+
+    if (data?.recurrence) {
+      const nextDue = getNextOccurrence(data.due_at, data.recurrence);
+      await sb.from('reminders').update({
+        due_at: nextDue.toISOString(), status: 'pending', last_notified_at: null
+      }).eq('id', id);
+      showToast(`🔁 Rolled to ${formatDateTime(nextDue)}`);
+    } else {
+      await sb.from('reminders').update({
+        status: 'completed', completed_at: new Date().toISOString()
+      }).eq('id', id);
+      showToast('✓ Marked as done');
+    }
+    loadReminders();
+  }
+
+  async function dismissReminder(id) {
+    document.getElementById(`card-${id}`).style.opacity = '0.4';
+    await sb.from('reminders').update({ status: 'dismissed' }).eq('id', id);
+    showToast('Reminder dismissed');
+    loadReminders();
+  }
+
+  function getNextOccurrence(currentDueIso, recurrence) {
+    const d = new Date(currentDueIso);
+    const h = d.getHours(), m = d.getMinutes();
+
+    if (recurrence === 'daily') {
+      d.setDate(d.getDate() + 1);
+      return d;
+    }
+    if (recurrence.startsWith('weekly:')) {
+      const days = { sunday:0, monday:1, tuesday:2, wednesday:3, thursday:4, friday:5, saturday:6 };
+      const targets = recurrence.replace('weekly:', '').split(',').map(x => days[x.trim()]);
+      const now = new Date();
+      for (let i = 1; i <= 7; i++) {
+        const c = new Date(now); c.setDate(now.getDate() + i); c.setHours(h, m, 0, 0);
+        if (targets.includes(c.getDay())) return c;
+      }
+    }
+    if (recurrence.startsWith('monthly:')) {
+      const day = parseInt(recurrence.split(':')[1]);
+      const next = new Date(d); next.setMonth(next.getMonth() + 1);
+      next.setDate(day); next.setHours(h, m, 0, 0);
+      return next;
+    }
+    d.setDate(d.getDate() + 7);
+    return d;
+  }
+
+  async function addReminder() {
+    const title = document.getElementById('new-title').value.trim();
+    const due = document.getElementById('new-due').value;
+    const recurrence = document.getElementById('new-recurrence').value || null;
+    const notes = document.getElementById('new-notes').value.trim() || null;
+
+    if (!title) { showToast('Please enter a title'); return; }
+    if (!due) { showToast('Please pick a date and time'); return; }
+
+    const { error } = await sb.from('reminders').insert({
+      title, notes, due_at: new Date(due).toISOString(), recurrence
+    });
+
+    if (error) { showToast('Error: ' + error.message); return; }
+
+    document.getElementById('new-title').value = '';
+    document.getElementById('new-due').value = '';
+    document.getElementById('new-recurrence').value = '';
+    document.getElementById('new-notes').value = '';
+
+    showToast('✓ Reminder added');
+    loadReminders();
+  }
+
+  document.getElementById('new-title').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addReminder();
+  });
+
+  // ── BOOT ──────────────────────────────────────────────
+
+  async function boot() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) { showApp(); return; }
+
+    sb.auth.onAuthStateChange((event, session) => {
+      if (session) showApp();
+      else {
+        document.getElementById('app').style.display = 'none';
+        document.getElementById('auth-screen').style.display = 'flex';
+      }
+    });
+  }
+
+  function showApp() {
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    const d = new Date(); d.setHours(d.getHours() + 1, 0, 0, 0);
+    document.getElementById('new-due').value = d.toISOString().slice(0,16);
+    loadReminders();
+    if (window.location.hash) history.replaceState(null, '', window.location.pathname);
+  }
+
+  boot();
+</script>
+</body>
+</html>
